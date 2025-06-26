@@ -307,7 +307,7 @@ function ipay88_qris_gateway_init_gateway_class() {
                 echo '<div id="ipay88-qris-content">';
                 echo '<h3>Scan QRIS untuk Pembayaran</h3>';
                 
-                echo '<div id="ipay88-qris-qrcode" style="display: inline-block; margin: 0 auto;"></div>';
+                echo '<div id="ipay88-qris-qrcode" style="display: inline-block; margin: 0 auto; pointer-events: none;" title=""></div>';
                 
                 echo '<div id="ipay88-countdown" style="margin: 15px 0; font-weight: bold; color: #d63638;">';
                 echo 'Selesaikan pembayaran dalam: <span id="ipay88-countdown-timer">' . gmdate("i:s", $time_left) . '</span>';
@@ -335,6 +335,9 @@ function ipay88_qris_gateway_init_gateway_class() {
                             colorLight : "#ffffff",
                             correctLevel : QRCode.CorrectLevel.H
                         });
+                        
+                        // Remove title attribute to prevent tooltip
+                        $("#ipay88-qris-qrcode").removeAttr("title");
                         
                         // Countdown timer
                         var countdown = ' . $time_left . ';
@@ -377,29 +380,36 @@ function ipay88_qris_gateway_init_gateway_class() {
                                             $("#ipay88-qris-content").hide();
                                             $("#ipay88-payment-status").html("<div class=\"woocommerce-message\" style=\"text-align: center;\">Pembayaran berhasil diterima! Halaman akan diperbarui...</div>");
                                             setTimeout(function() {
-                                                window.location.reload();
+                                                window.location.reload(true); // Force reload from server
                                             }, 2000);
+                                            return false; // Stop further checks
                                         } else if (response.data.expired) {
                                             clearInterval(countdownInterval);
                                             $("#ipay88-qris-content").hide();
                                             $("#ipay88-payment-status").html("<div class=\"woocommerce-error\" style=\"text-align: center;\">Waktu pembayaran telah habis. Silakan buat pesanan baru.</div>");
+                                            return false; // Stop further checks
                                         }
                                     }
+                                    return true; // Continue checking
                                 },
                                 error: function(xhr, status, error) {
                                     console.error("Payment check error:", error);
+                                    return true; // Continue checking even on error
+                                }
+                            }).done(function(shouldContinue) {
+                                if (!shouldContinue) {
+                                    clearInterval(paymentCheckInterval);
                                 }
                             });
                         };
                         
                         // Start checking immediately and set interval
-                        paymentCheck();
-                        var paymentCheckInterval = setInterval(paymentCheck, checkInterval);
+                        var paymentCheckInterval = setInterval(function() {
+                            paymentCheck();
+                        }, checkInterval);
                         
-                        // Clear interval when payment is received
-                        $(document).on("ipay88_payment_received", function() {
-                            clearInterval(paymentCheckInterval);
-                        });
+                        // Initial check
+                        paymentCheck();
                     });
                 ');
             }
