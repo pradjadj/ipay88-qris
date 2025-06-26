@@ -187,12 +187,21 @@ function ipay88_qris_gateway_init_gateway_class() {
         public function thankyou_page($order_id) {
             $order = wc_get_order($order_id);
             
-            if ($order->get_payment_method() === $this->id && $order->has_status('pending')) {
-                // Cek apakah sudah ada transaksi sebelumnya
-                if (!$order->get_meta('_ipay88_ref_no')) {
-                    $this->generate_ipay88_request($order);
-                } else {
-                    $this->display_qr_code($order->get_meta('_ipay88_qr_content'), $order);
+            if ($order->get_payment_method() === $this->id) {
+                if ($order->is_paid()) {
+                    // Show payment received message if already paid
+                    echo '<div class="ipay88-qris-container" style="text-align: center; margin: 20px 0;">';
+                    echo '<div class="woocommerce-message" style="font-size: 1.2em; padding: 15px; background-color: #f5f5f5; border-left: 4px solid #46b450;">';
+                    echo 'Pembayaran Diterima';
+                    echo '</div>';
+                    echo '</div>';
+                } elseif ($order->has_status('pending')) {
+                    // Cek apakah sudah ada transaksi sebelumnya
+                    if (!$order->get_meta('_ipay88_ref_no')) {
+                        $this->generate_ipay88_request($order);
+                    } else {
+                        $this->display_qr_code($order->get_meta('_ipay88_qr_content'), $order);
+                    }
                 }
             }
         }
@@ -291,92 +300,102 @@ function ipay88_qris_gateway_init_gateway_class() {
             $time_left = max(0, $expiry_timestamp - $current_time);
             
             echo '<div class="ipay88-qris-container" style="text-align: center; margin: 20px 0;">';
-            echo '<div id="ipay88-qris-content">';
-            echo '<h3>Scan QRIS untuk Pembayaran</h3>';
             
-            echo '<div id="ipay88-qris-qrcode" style="display: inline-block; margin: 0 auto;"></div>';
-            
-            echo '<div id="ipay88-countdown" style="margin: 15px 0; font-weight: bold; color: #d63638;">';
-            echo 'Selesaikan pembayaran dalam: <span id="ipay88-countdown-timer">' . gmdate("i:s", $time_left) . '</span>';
-            echo '</div>';
-            
-            echo '<p>Silakan scan QR code di atas menggunakan aplikasi mobile banking atau e-wallet yang mendukung QRIS.</p>';
-            
-            echo '<button id="ipay88-refresh-page" class="button alt" style="margin: 10px 0; padding: 10px 20px; font-size: 1.2em;">';
-            echo 'Refresh Status Pembayaran';
-            echo '</button>';
-            echo '</div>';
-            
-            echo '<div id="ipay88-payment-status" style="margin-top: 20px;"></div>';
+            // Check if order is already paid
+            if ($order->is_paid()) {
+                echo '<div class="woocommerce-message" style="font-size: 1.2em; padding: 15px; background-color: #f5f5f5; border-left: 4px solid #46b450;">';
+                echo 'Pembayaran Diterima';
+                echo '</div>';
+            } else {
+                echo '<div id="ipay88-qris-content">';
+                echo '<h3>Scan QRIS untuk Pembayaran</h3>';
+                
+                echo '<div id="ipay88-qris-qrcode" style="display: inline-block; margin: 0 auto;"></div>';
+                
+                echo '<div id="ipay88-countdown" style="margin: 15px 0; font-weight: bold; color: #d63638;">';
+                echo 'Selesaikan pembayaran dalam: <span id="ipay88-countdown-timer">' . gmdate("i:s", $time_left) . '</span>';
+                echo '</div>';
+                
+                echo '<p>Silakan scan QR code di atas menggunakan aplikasi mobile banking atau e-wallet yang mendukung QRIS.</p>';
+                
+                echo '<button id="ipay88-refresh-page" class="button alt" style="margin: 10px 0; padding: 10px 20px; font-size: 1.2em;">';
+                echo 'Refresh Status Pembayaran';
+                echo '</button>';
+                echo '</div>';
+                
+                echo '<div id="ipay88-payment-status" style="margin-top: 20px;"></div>';
+            }
             
             $ajax_nonce = wp_create_nonce('ipay88_qris_check_payment_nonce');
             
-            wc_enqueue_js('
-                jQuery(document).ready(function($) {
-                    new QRCode(document.getElementById("ipay88-qris-qrcode"), {
-                        text: "' . esc_js($qr_content) . '",
-                        width: 300,
-                        height: 300,
-                        colorDark : "#000000",
-                        colorLight : "#ffffff",
-                        correctLevel : QRCode.CorrectLevel.H
-                    });
-                    
-                    var countdown = ' . $time_left . ';
-                    var countdownElement = $("#ipay88-countdown-timer");
-                    var countdownInterval;
-                    var isPaid = false;
-                    
-                    function updateCountdown() {
-                        countdown--;
-                        if (countdown <= 0) {
-                            clearInterval(countdownInterval);
-                            $("#ipay88-qris-content").hide();
-                            $("#ipay88-payment-status").html("<div class=\"woocommerce-error\" style=\"text-align: center;\">Waktu pembayaran telah habis. Silakan buat pesanan baru.</div>");
-                            return;
+            if (!$order->is_paid()) {
+                wc_enqueue_js('
+                    jQuery(document).ready(function($) {
+                        new QRCode(document.getElementById("ipay88-qris-qrcode"), {
+                            text: "' . esc_js($qr_content) . '",
+                            width: 300,
+                            height: 300,
+                            colorDark : "#000000",
+                            colorLight : "#ffffff",
+                            correctLevel : QRCode.CorrectLevel.H
+                        });
+                        
+                        var countdown = ' . $time_left . ';
+                        var countdownElement = $("#ipay88-countdown-timer");
+                        var countdownInterval;
+                        var isPaid = false;
+                        
+                        function updateCountdown() {
+                            countdown--;
+                            if (countdown <= 0) {
+                                clearInterval(countdownInterval);
+                                $("#ipay88-qris-content").hide();
+                                $("#ipay88-payment-status").html("<div class=\"woocommerce-error\" style=\"text-align: center;\">Waktu pembayaran telah habis. Silakan buat pesanan baru.</div>");
+                                return;
+                            }
+                            
+                            var minutes = Math.floor(countdown / 60);
+                            var seconds = countdown % 60;
+                            countdownElement.text((minutes < 10 ? "0" + minutes : minutes) + ":" + (seconds < 10 ? "0" + seconds : seconds));
                         }
                         
-                        var minutes = Math.floor(countdown / 60);
-                        var seconds = countdown % 60;
-                        countdownElement.text((minutes < 10 ? "0" + minutes : minutes) + ":" + (seconds < 10 ? "0" + seconds : seconds));
-                    }
-                    
-                    countdownInterval = setInterval(updateCountdown, 1000);
-                    
-                    $("#ipay88-refresh-page").on("click", function() {
-                        window.location.reload();
-                    });
-                    
-                    function checkPaymentStatus() {
-                        if (isPaid) return;
+                        countdownInterval = setInterval(updateCountdown, 1000);
                         
-                        $.ajax({
-                            url: "' . admin_url('admin-ajax.php') . '",
-                            type: "POST",
-                            data: {
-                                action: "ipay88_qris_check_payment",
-                                order_id: "' . $order->get_id() . '",
-                                security: "' . $ajax_nonce . '"
-                            },
-                            dataType: "json",
-                            success: function(response) {
-                                if (response.success && response.data.paid) {
-                                    isPaid = true;
-                                    clearInterval(countdownInterval);
-                                    $("#ipay88-qris-content").hide();
-                                    $("#ipay88-payment-status").html("<div class=\"woocommerce-message\" style=\"text-align: center;\">Pembayaran berhasil diterima! Halaman akan diperbarui...</div>");
-                                    setTimeout(function() {
-                                        window.location.reload();
-                                    }, 2000);
-                                }
-                            }
+                        $("#ipay88-refresh-page").on("click", function() {
+                            window.location.reload();
                         });
-                    }
-                    
-                    setInterval(checkPaymentStatus, ' . ($this->check_interval * 1000) . ');
-                    checkPaymentStatus();
-                });
-            ');
+                        
+                        function checkPaymentStatus() {
+                            if (isPaid) return;
+                            
+                            $.ajax({
+                                url: "' . admin_url('admin-ajax.php') . '",
+                                type: "POST",
+                                data: {
+                                    action: "ipay88_qris_check_payment",
+                                    order_id: "' . $order->get_id() . '",
+                                    security: "' . $ajax_nonce . '"
+                                },
+                                dataType: "json",
+                                success: function(response) {
+                                    if (response.success && response.data.paid) {
+                                        isPaid = true;
+                                        clearInterval(countdownInterval);
+                                        $("#ipay88-qris-content").hide();
+                                        $("#ipay88-payment-status").html("<div class=\"woocommerce-message\" style=\"text-align: center;\">Pembayaran berhasil diterima! Halaman akan diperbarui...</div>");
+                                        setTimeout(function() {
+                                            window.location.reload();
+                                        }, 2000);
+                                    }
+                                }
+                            });
+                        }
+                        
+                        setInterval(checkPaymentStatus, ' . ($this->check_interval * 1000) . ');
+                        checkPaymentStatus();
+                    });
+                ');
+            }
             
             echo '</div>';
         }
