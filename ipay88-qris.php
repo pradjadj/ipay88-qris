@@ -3,7 +3,7 @@
  * Plugin Name: iPay88 QRIS Gateway
  * Plugin URI: https://sgnet.co.id
  * Description: iPay88 Payment Gateway with QRIS for WooCommerce - Display QR directly on checkout page
- * Version: 1.1
+ * Version: 1.0
  * Author: Pradja DJ
  * Author URI: https://sgnet.co.id
  */
@@ -35,7 +35,7 @@ function ipay88_qris_gateway_init_gateway_class() {
         private $environment;
         private $payment_id = '120'; // QRIS Dynamic
         private $expiry_minutes;
-        private $check_interval = 5; // Interval cek pembayaran dalam detik
+        private $check_interval = 3; // Interval cek pembayaran dalam detik (dinaikkan dari 5 ke 10)
         private $status_after_payment;
         
         public function __construct() {
@@ -187,12 +187,19 @@ function ipay88_qris_gateway_init_gateway_class() {
         public function thankyou_page($order_id) {
             $order = wc_get_order($order_id);
             
-            if ($order->get_payment_method() === $this->id && $order->has_status('pending')) {
-                // Cek apakah sudah ada transaksi sebelumnya
-                if (!$order->get_meta('_ipay88_ref_no')) {
-                    $this->generate_ipay88_request($order);
-                } else {
-                    $this->display_qr_code($order->get_meta('_ipay88_qr_content'), $order);
+            if ($order->get_payment_method() === $this->id) {
+                if ($order->is_paid()) {
+                    echo '<div class="ipay88-qris-container" style="text-align: center; margin: 20px 0;">';
+                    echo '<div class="woocommerce-message" style="font-size: 1.2em; padding: 15px; background-color: #f5f5f5; border-left: 4px solid #46b450;">';
+                    echo 'Pembayaran Diterima';
+                    echo '</div>';
+                    echo '</div>';
+                } elseif ($order->has_status('pending')) {
+                    if (!$order->get_meta('_ipay88_ref_no')) {
+                        $this->generate_ipay88_request($order);
+                    } else {
+                        $this->display_qr_code($order->get_meta('_ipay88_qr_content'), $order);
+                    }
                 }
             }
         }
@@ -291,92 +298,111 @@ function ipay88_qris_gateway_init_gateway_class() {
             $time_left = max(0, $expiry_timestamp - $current_time);
             
             echo '<div class="ipay88-qris-container" style="text-align: center; margin: 20px 0;">';
-            echo '<div id="ipay88-qris-content">';
-            echo '<h3>Scan QRIS untuk Pembayaran</h3>';
             
-            echo '<div id="ipay88-qris-qrcode" style="display: inline-block; margin: 0 auto;"></div>';
-            
-            echo '<div id="ipay88-countdown" style="margin: 15px 0; font-weight: bold; color: #d63638;">';
-            echo 'Selesaikan pembayaran dalam: <span id="ipay88-countdown-timer">' . gmdate("i:s", $time_left) . '</span>';
-            echo '</div>';
-            
-            echo '<p>Silakan scan QR code di atas menggunakan aplikasi mobile banking atau e-wallet yang mendukung QRIS.</p>';
-            
-            echo '<button id="ipay88-refresh-page" class="button alt" style="margin: 10px 0; padding: 10px 20px; font-size: 1.2em;">';
-            echo 'Refresh Status Pembayaran';
-            echo '</button>';
-            echo '</div>';
-            
-            echo '<div id="ipay88-payment-status" style="margin-top: 20px;"></div>';
-            
-            $ajax_nonce = wp_create_nonce('ipay88_qris_check_payment_nonce');
-            
-            wc_enqueue_js('
-                jQuery(document).ready(function($) {
-                    new QRCode(document.getElementById("ipay88-qris-qrcode"), {
-                        text: "' . esc_js($qr_content) . '",
-                        width: 300,
-                        height: 300,
-                        colorDark : "#000000",
-                        colorLight : "#ffffff",
-                        correctLevel : QRCode.CorrectLevel.H
-                    });
-                    
-                    var countdown = ' . $time_left . ';
-                    var countdownElement = $("#ipay88-countdown-timer");
-                    var countdownInterval;
-                    var isPaid = false;
-                    
-                    function updateCountdown() {
-                        countdown--;
-                        if (countdown <= 0) {
-                            clearInterval(countdownInterval);
-                            $("#ipay88-qris-content").hide();
-                            $("#ipay88-payment-status").html("<div class=\"woocommerce-error\" style=\"text-align: center;\">Waktu pembayaran telah habis. Silakan buat pesanan baru.</div>");
-                            return;
-                        }
-                        
-                        var minutes = Math.floor(countdown / 60);
-                        var seconds = countdown % 60;
-                        countdownElement.text((minutes < 10 ? "0" + minutes : minutes) + ":" + (seconds < 10 ? "0" + seconds : seconds));
-                    }
-                    
-                    countdownInterval = setInterval(updateCountdown, 1000);
-                    
-                    $("#ipay88-refresh-page").on("click", function() {
-                        window.location.reload();
-                    });
-                    
-                    function checkPaymentStatus() {
-                        if (isPaid) return;
-                        
-                        $.ajax({
-                            url: "' . admin_url('admin-ajax.php') . '",
-                            type: "POST",
-                            data: {
-                                action: "ipay88_qris_check_payment",
-                                order_id: "' . $order->get_id() . '",
-                                security: "' . $ajax_nonce . '"
-                            },
-                            dataType: "json",
-                            success: function(response) {
-                                if (response.success && response.data.paid) {
-                                    isPaid = true;
-                                    clearInterval(countdownInterval);
-                                    $("#ipay88-qris-content").hide();
-                                    $("#ipay88-payment-status").html("<div class=\"woocommerce-message\" style=\"text-align: center;\">Pembayaran berhasil diterima! Halaman akan diperbarui...</div>");
-                                    setTimeout(function() {
-                                        window.location.reload();
-                                    }, 2000);
-                                }
-                            }
+            if ($order->is_paid()) {
+                echo '<div class="woocommerce-message" style="font-size: 1.2em; padding: 15px; background-color: #f5f5f5; border-left: 4px solid #46b450;">';
+                echo 'Pembayaran Diterima';
+                echo '</div>';
+            } else {
+                echo '<div id="ipay88-qris-content">';
+                echo '<h3>Scan QRIS untuk Pembayaran</h3>';
+                
+                echo '<div id="ipay88-qris-qrcode" style="display: inline-block; margin: 0 auto;"></div>';
+                
+                echo '<div id="ipay88-countdown" style="margin: 15px 0; font-weight: bold; color: #d63638;">';
+                echo 'Selesaikan pembayaran dalam: <span id="ipay88-countdown-timer">' . gmdate("i:s", $time_left) . '</span>';
+                echo '</div>';
+                
+                echo '<p>Silakan scan QR code di atas menggunakan aplikasi mobile banking atau e-wallet yang mendukung QRIS.</p>';
+                
+                echo '<button id="ipay88-refresh-page" class="button alt" style="margin: 10px 0; padding: 10px 20px; font-size: 1.2em;">';
+                echo 'Refresh Status Pembayaran';
+                echo '</button>';
+                echo '</div>';
+                
+                echo '<div id="ipay88-payment-status" style="margin-top: 20px;"></div>';
+                
+                $ajax_nonce = wp_create_nonce('ipay88_qris_check_payment_nonce');
+                
+                wc_enqueue_js('
+                    jQuery(document).ready(function($) {
+                        // Initialize QR Code
+                        new QRCode(document.getElementById("ipay88-qris-qrcode"), {
+                            text: "' . esc_js($qr_content) . '",
+                            width: 300,
+                            height: 300,
+                            colorDark : "#000000",
+                            colorLight : "#ffffff",
+                            correctLevel : QRCode.CorrectLevel.H
                         });
-                    }
-                    
-                    setInterval(checkPaymentStatus, ' . ($this->check_interval * 1000) . ');
-                    checkPaymentStatus();
-                });
-            ');
+                        
+                        // Countdown timer
+                        var countdown = ' . $time_left . ';
+                        var countdownElement = $("#ipay88-countdown-timer");
+                        var countdownInterval = setInterval(function() {
+                            countdown--;
+                            if (countdown <= 0) {
+                                clearInterval(countdownInterval);
+                                $("#ipay88-qris-content").hide();
+                                $("#ipay88-payment-status").html("<div class=\"woocommerce-error\" style=\"text-align: center;\">Waktu pembayaran telah habis. Silakan buat pesanan baru.</div>");
+                                return;
+                            }
+                            
+                            var minutes = Math.floor(countdown / 60);
+                            var seconds = countdown % 60;
+                            countdownElement.text((minutes < 10 ? "0" + minutes : minutes) + ":" + (seconds < 10 ? "0" + seconds : seconds));
+                        }, 1000);
+                        
+                        // Manual refresh button
+                        $("#ipay88-refresh-page").on("click", function() {
+                            window.location.reload();
+                        });
+                        
+                        // Payment status check
+                        var checkInterval = ' . ($this->check_interval * 1000) . ';
+                        var paymentCheck = function() {
+                            $.ajax({
+                                url: "' . admin_url('admin-ajax.php') . '",
+                                type: "POST",
+                                data: {
+                                    action: "ipay88_qris_check_payment",
+                                    order_id: "' . $order->get_id() . '",
+                                    security: "' . $ajax_nonce . '"
+                                },
+                                dataType: "json",
+                                success: function(response) {
+                                    if (response.success) {
+                                        if (response.data.paid) {
+                                            clearInterval(countdownInterval);
+                                            $("#ipay88-qris-content").hide();
+                                            $("#ipay88-payment-status").html("<div class=\"woocommerce-message\" style=\"text-align: center;\">Pembayaran berhasil diterima! Halaman akan diperbarui...</div>");
+                                            setTimeout(function() {
+                                                window.location.reload();
+                                            }, 2000);
+                                        } else if (response.data.expired) {
+                                            clearInterval(countdownInterval);
+                                            $("#ipay88-qris-content").hide();
+                                            $("#ipay88-payment-status").html("<div class=\"woocommerce-error\" style=\"text-align: center;\">Waktu pembayaran telah habis. Silakan buat pesanan baru.</div>");
+                                        }
+                                    }
+                                },
+                                error: function(xhr, status, error) {
+                                    console.error("Payment check error:", error);
+                                }
+                            });
+                        };
+                        
+                        // Start checking immediately and set interval
+                        paymentCheck();
+                        var paymentCheckInterval = setInterval(paymentCheck, checkInterval);
+                        
+                        // Clear interval when payment is received
+                        $(document).on("ipay88_payment_received", function() {
+                            clearInterval(paymentCheckInterval);
+                        });
+                    });
+                ');
+            }
             
             echo '</div>';
         }
@@ -406,12 +432,12 @@ function ipay88_qris_gateway_init_gateway_class() {
                         
                         if ($generated_signature === $response['Signature']) {
                             if ($response['TransactionStatus'] === '1') {
-                                // Update order status based on setting
                                 $new_status = $this->status_after_payment;
                                 $order->update_status($new_status, 'Pembayaran berhasil via iPay88. TransID: ' . $response['TransId']);
-                                
-                                // Add payment complete
                                 $order->payment_complete($response['TransId']);
+                                
+                                // Trigger event for frontend
+                                $this->log('Payment received for order #' . $order_id);
                                 
                                 header('Content-Type: application/json');
                                 echo json_encode(array(
@@ -439,7 +465,6 @@ function ipay88_qris_gateway_init_gateway_class() {
                 }
             }
             
-            // Default response if validation fails
             header('Content-Type: application/json');
             echo json_encode(array(
                 'Code' => '0',
@@ -465,37 +490,31 @@ function ipay88_qris_gateway_init_gateway_class() {
             $paid = $order->is_paid();
             $expired = false;
             
-            // Check if order has expired and is still pending
-            $expiry = $order->get_meta('_ipay88_expiry');
-            if (!$paid && $expiry && time() > $expiry && $order->has_status('pending')) {
-                // Add random delay between 1-5 seconds to avoid race conditions
-                sleep(rand(1, 5));
-                
-                // Restore stock
-                wc_increase_stock_levels($order->get_id());
-                
-                // Cancel order
-                $order->update_status(
-                    'cancelled', 
-                    sprintf(
-                        'Pembayaran QRIS kadaluarsa (waktu habis: %s)',
-                        date('Y-m-d H:i:s', $expiry)
-                    )
-                );
-                
-                $this->log(sprintf(
-                    'Order #%d cancelled due to QRIS payment expiry',
-                    $order->get_id()
-                ));
-                
-                $expired = true;
+            if (!$paid) {
+                $expiry = $order->get_meta('_ipay88_expiry');
+                if ($expiry && time() > $expiry && $order->has_status('pending')) {
+                    sleep(rand(1, 5));
+                    wc_increase_stock_levels($order->get_id());
+                    $order->update_status(
+                        'cancelled', 
+                        sprintf(
+                            'Pembayaran QRIS kadaluarsa (waktu habis: %s)',
+                            date('Y-m-d H:i:s', $expiry)
+                        )
+                    );
+                    $this->log(sprintf(
+                        'Order #%d cancelled due to QRIS payment expiry',
+                        $order->get_id()
+                    ));
+                    $expired = true;
+                }
             }
             
             wp_send_json_success(array(
                 'paid' => $paid,
                 'expired' => $expired,
                 'message' => $paid ? 'Pembayaran telah diterima' : 
-                            ($expired ? 'Waktu pembayaran telah habis' : 'Menunggu pembayaran')
+                          ($expired ? 'Waktu pembayaran telah habis' : 'Menunggu pembayaran')
             ));
         }
         
