@@ -3,7 +3,7 @@
  * Plugin Name: iPay88 QRIS Gateway
  * Plugin URI: https://sgnet.co.id
  * Description: iPay88 Payment Gateway with QRIS for WooCommerce - Display QR directly on checkout page
- * Version: 1.0
+ * Version: 1.1
  * Author: Pradja DJ
  * Author URI: https://sgnet.co.id
  */
@@ -36,6 +36,7 @@ function ipay88_qris_gateway_init_gateway_class() {
         private $payment_id = '120'; // QRIS Dynamic
         private $expiry_minutes;
         private $check_interval = 5; // Interval cek pembayaran dalam detik
+        private $status_after_payment;
         
         public function __construct() {
             // Prevent session start warning
@@ -56,7 +57,8 @@ function ipay88_qris_gateway_init_gateway_class() {
             $this->merchant_key = $this->get_option('merchant_key');
             $this->merchant_code = $this->get_option('merchant_code');
             $this->environment = $this->get_option('environment');
-            $this->expiry_minutes = $this->get_option('expiry_minutes', 1);
+            $this->expiry_minutes = $this->get_option('expiry_minutes', 10);
+            $this->status_after_payment = $this->get_option('status_after_payment', 'processing');
             
             add_action('woocommerce_update_options_payment_gateways_' . $this->id, array($this, 'process_admin_options'));
             add_action('woocommerce_thankyou_' . $this->id, array($this, 'thankyou_page'));
@@ -128,6 +130,17 @@ function ipay88_qris_gateway_init_gateway_class() {
                     'custom_attributes' => array(
                         'min'  => '1',
                         'step' => '1'
+                    )
+                ),
+                'status_after_payment' => array(
+                    'title'       => 'Status Setelah Pembayaran',
+                    'type'        => 'select',
+                    'class'       => 'wc-enhanced-select',
+                    'description' => 'Status order setelah pembayaran berhasil.',
+                    'default'     => 'processing',
+                    'options'     => array(
+                        'processing' => 'Processing',
+                        'completed'  => 'Completed'
                     )
                 ),
                 'environment' => array(
@@ -393,8 +406,12 @@ function ipay88_qris_gateway_init_gateway_class() {
                         
                         if ($generated_signature === $response['Signature']) {
                             if ($response['TransactionStatus'] === '1') {
-                                $order->payment_complete();
-                                $order->add_order_note('Pembayaran berhasil via iPay88. TransID: ' . $response['TransId']);
+                                // Update order status based on setting
+                                $new_status = $this->status_after_payment;
+                                $order->update_status($new_status, 'Pembayaran berhasil via iPay88. TransID: ' . $response['TransId']);
+                                
+                                // Add payment complete
+                                $order->payment_complete($response['TransId']);
                                 
                                 header('Content-Type: application/json');
                                 echo json_encode(array(
@@ -408,10 +425,30 @@ function ipay88_qris_gateway_init_gateway_class() {
                             }
                         } else {
                             $this->log('BackendPost Signature Mismatch');
+                            header('Content-Type: application/json');
+                            echo json_encode(array(
+                                'Code' => '0',
+                                'Message' => array(
+                                    'English' => 'Invalid Signature',
+                                    'Indonesian' => 'Signature tidak valid'
+                                )
+                            ));
+                            exit;
                         }
                     }
                 }
             }
+            
+            // Default response if validation fails
+            header('Content-Type: application/json');
+            echo json_encode(array(
+                'Code' => '0',
+                'Message' => array(
+                    'English' => 'Invalid Request',
+                    'Indonesian' => 'Permintaan tidak valid'
+                )
+            ));
+            exit;
         }
         
         public function check_payment_status() {
@@ -468,6 +505,5 @@ function ipay88_qris_gateway_init_gateway_class() {
                 $logger->debug($message, array('source' => 'ipay88-qris-gateway'));
             }
         }
-        
     }
 }
