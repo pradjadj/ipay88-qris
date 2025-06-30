@@ -35,7 +35,7 @@ function ipay88_qris_gateway_init_gateway_class() {
         private $environment;
         private $payment_id = '120'; // QRIS Dynamic
         private $expiry_minutes;
-        private $check_interval = 3; // Interval cek pembayaran dalam detik (dinaikkan dari 5 ke 10)
+        private $check_interval = 3; // Interval cek pembayaran dalam detik
         private $status_after_payment;
         
         public function __construct() {
@@ -315,6 +315,10 @@ function ipay88_qris_gateway_init_gateway_class() {
                 
                 echo '<p>Silakan scan QR code di atas menggunakan aplikasi mobile banking atau e-wallet yang mendukung QRIS.</p>';
                 
+                // Area pesan status
+                echo '<div id="ipay88-status-message" style="margin: 15px 0; font-weight: bold;"></div>';
+                
+                // Tombol refresh manual
                 echo '<button id="ipay88-refresh-page" class="button alt" style="margin: 10px 0; padding: 10px 20px; font-size: 1.2em;">';
                 echo 'Refresh Status Pembayaran';
                 echo '</button>';
@@ -346,8 +350,8 @@ function ipay88_qris_gateway_init_gateway_class() {
                             countdown--;
                             if (countdown <= 0) {
                                 clearInterval(countdownInterval);
-                                $("#ipay88-qris-content").hide();
-                                $("#ipay88-payment-status").html("<div class=\"woocommerce-error\" style=\"text-align: center;\">Waktu pembayaran telah habis. Silakan buat pesanan baru.</div>");
+                                $("#ipay88-status-message").html("<div class=\"woocommerce-error\">Waktu pembayaran telah habis. Silakan buat pesanan baru.</div>");
+                                $("#ipay88-refresh-page").prop("disabled", true);
                                 return;
                             }
                             
@@ -377,39 +381,27 @@ function ipay88_qris_gateway_init_gateway_class() {
                                     if (response.success) {
                                         if (response.data.paid) {
                                             clearInterval(countdownInterval);
-                                            $("#ipay88-qris-content").hide();
-                                            $("#ipay88-payment-status").html("<div class=\"woocommerce-message\" style=\"text-align: center;\">Pembayaran berhasil diterima! Halaman akan diperbarui...</div>");
+                                            $("#ipay88-status-message").html("<div class=\"woocommerce-message\">Pembayaran berhasil diterima! Halaman akan diperbarui...</div>");
+                                            $("#ipay88-refresh-page").prop("disabled", true);
                                             setTimeout(function() {
                                                 window.location.reload(true); // Force reload from server
                                             }, 2000);
-                                            return false; // Stop further checks
                                         } else if (response.data.expired) {
                                             clearInterval(countdownInterval);
-                                            $("#ipay88-qris-content").hide();
-                                            $("#ipay88-payment-status").html("<div class=\"woocommerce-error\" style=\"text-align: center;\">Waktu pembayaran telah habis. Silakan buat pesanan baru.</div>");
-                                            return false; // Stop further checks
+                                            $("#ipay88-status-message").html("<div class=\"woocommerce-error\">Waktu pembayaran telah habis. Silakan buat pesanan baru.</div>");
+                                            $("#ipay88-refresh-page").prop("disabled", true);
                                         }
                                     }
-                                    return true; // Continue checking
                                 },
                                 error: function(xhr, status, error) {
                                     console.error("Payment check error:", error);
-                                    return true; // Continue checking even on error
-                                }
-                            }).done(function(shouldContinue) {
-                                if (!shouldContinue) {
-                                    clearInterval(paymentCheckInterval);
                                 }
                             });
                         };
                         
                         // Start checking immediately and set interval
-                        var paymentCheckInterval = setInterval(function() {
-                            paymentCheck();
-                        }, checkInterval);
-                        
-                        // Initial check
                         paymentCheck();
+                        var paymentCheckInterval = setInterval(paymentCheck, checkInterval);
                     });
                 ');
             }
